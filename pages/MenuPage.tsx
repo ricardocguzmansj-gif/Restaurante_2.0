@@ -61,7 +61,7 @@ const MenuItemModal: React.FC<{
     // Effect to clean up recipe if category changes and ingredients become invalid
     useEffect(() => {
         const isDrinkCategory = formData.category_id === drinksCategoryId;
-        const ingredientsMap = new Map(ingredients.map(i => [i.id, i]));
+        const ingredientsMap = new Map<string, Ingredient>(ingredients.map(i => [i.id, i]));
 
         const validRecipe = formData.receta.filter(recipeItem => {
             const ingredient = ingredientsMap.get(recipeItem.ingredient_id);
@@ -128,7 +128,7 @@ const MenuItemModal: React.FC<{
     };
 
     const calculatedCost = useMemo(() => {
-        const ingredientsMap = new Map(ingredients.map(i => [i.id, i]));
+        const ingredientsMap = new Map<string, Ingredient>(ingredients.map(i => [i.id, i]));
         return formData.receta.reduce((total, recipeItem) => {
             const ingredient = ingredientsMap.get(recipeItem.ingredient_id);
             return total + (ingredient ? ingredient.coste_unitario * recipeItem.cantidad : 0);

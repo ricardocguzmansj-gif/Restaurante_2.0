@@ -7,7 +7,7 @@ import { NAVIGATION_ITEMS } from '../../constants';
 import { UserRole } from '../../types';
 
 export const Sidebar: React.FC = () => {
-    const { user, logout, switchRestaurant } = useAppContext();
+    const { user, logout, switchRestaurant, restaurantSettings } = useAppContext();
 
     if (!user) return null;
 
@@ -46,9 +46,11 @@ export const Sidebar: React.FC = () => {
 
     return (
         <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-center h-20 border-b border-gray-200 dark:border-gray-700">
-                 <Pizza className="h-8 w-8 text-orange-500" />
-                <span className="ml-2 text-xl font-bold text-gray-800 dark:text-white">Restaurante Pro</span>
+            <div className="flex items-center justify-center h-20 border-b border-gray-200 dark:border-gray-700 px-4">
+                 <Pizza className="h-8 w-8 text-orange-500 flex-shrink-0" />
+                <span className="ml-2 text-lg font-bold text-gray-800 dark:text-white truncate" title={restaurantSettings?.nombre || 'Restaurante Pro'}>
+                    {restaurantSettings?.nombre || 'Restaurante Pro'}
+                </span>
             </div>
             <nav className="flex-1 p-4 space-y-2">
                 {user.rol === UserRole.SUPER_ADMIN && (

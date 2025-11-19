@@ -881,8 +881,8 @@ const DeliveryManagementView: React.FC<{
 
     const waitingOrders = deliveryOrders.filter(o => !o.repartidor_id && o.estado === OrderStatus.LISTO && o.payments.reduce((s,p) => s+p.amount, 0) >= o.total);
     const activeDeliveries = deliveryOrders.filter(o => o.repartidor_id && ![OrderStatus.ENTREGADO, OrderStatus.CANCELADO, OrderStatus.DEVOLUCION].includes(o.estado));
-    const customersMap = new Map(customers.map(c => [c.id, c]));
-    const repartidoresMap = new Map(repartidores.map(r => [r.id, r]));
+    const customersMap = new Map<string, Customer>(customers.map(c => [c.id, c]));
+    const repartidoresMap = new Map<string, User>(repartidores.map(r => [r.id, r]));
     
     const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setDateRange(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -1142,8 +1142,8 @@ export const OrdersPage: React.FC = () => {
         }
     }, [searchParams]);
 
-    const customersMap = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers]);
-    const usersMap = useMemo(() => new Map(users.map(u => [u.id, u.nombre])), [users]);
+    const customersMap = useMemo(() => new Map<string, Customer>(customers.map(c => [c.id, c])), [customers]);
+    const usersMap = useMemo(() => new Map<string, string>(users.map(u => [u.id, u.nombre])), [users]);
     const waiters = useMemo(() => users.filter(u => u.rol === UserRole.MOZO), [users]);
     const repartidores = useMemo(() => users.filter(u => u.rol === UserRole.REPARTO), [users]);
     
