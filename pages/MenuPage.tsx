@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card } from '../components/ui/Card';
 import { useAppContext } from '../contexts/AppContext';
 import { formatCurrency } from '../utils';
-import { PlusCircle, Upload, X, Edit, Trash2, ListOrdered, ArrowUp, ArrowDown, RotateCcw } from 'lucide-react';
+import { PlusCircle, Upload, X, Edit, Trash2, ListOrdered, ArrowUp, ArrowDown, RotateCcw, Sparkles, Loader2 } from 'lucide-react';
 import { UserRole, MenuItem, MenuCategory, Ingredient, RecipeItem, IngredientCategory } from '../types';
+import { generateMenuDescription } from '../services/ai';
 
 const ToggleSwitch: React.FC<{ checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }> = ({ checked, onChange, disabled = false }) => {
     return (
@@ -21,6 +23,7 @@ const MenuItemModal: React.FC<{
     onSave: (itemData: Omit<MenuItem, 'id' | 'restaurant_id' | 'coste' | 'stock_actual'> | MenuItem) => void;
 }> = ({ item, categories, onClose, onSave }) => {
     const { ingredients, processedMenuItems, showToast } = useAppContext();
+    const [isGenerating, setIsGenerating] = useState(false);
     const [formData, setFormData] = useState({
         nombre: '',
         descripcion: '',
@@ -139,6 +142,31 @@ const MenuItemModal: React.FC<{
             etiquetas: e.target.value.split(',').map(tag => tag.trim()).filter(Boolean)
         }));
     };
+    
+    const handleGenerateDescription = async () => {
+        if (!formData.nombre) {
+            showToast("Ingresa un nombre para el producto.", "error");
+            return;
+        }
+        if (formData.receta.length === 0) {
+            showToast("Añade ingredientes primero para generar una descripción más precisa.", "error");
+            // We continue anyway, just with the name
+        }
+        
+        setIsGenerating(true);
+        const ingredientNames = formData.receta
+            .map(r => ingredients.find(i => i.id === r.ingredient_id)?.nombre || '')
+            .filter(Boolean);
+            
+        const desc = await generateMenuDescription(formData.nombre, ingredientNames);
+        if (desc) {
+            setFormData(prev => ({ ...prev, descripcion: desc }));
+            showToast("¡Descripción generada con IA!", "success");
+        } else {
+            showToast("No se pudo generar la descripción. Intenta de nuevo.", "error");
+        }
+        setIsGenerating(false);
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -182,7 +210,18 @@ const MenuItemModal: React.FC<{
                             <input type="text" name="nombre" value={formData.nombre} onChange={handleChange} required className={inputClasses} />
                         </div>
                         <div>
-                            <label htmlFor="descripcion" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Descripción</label>
+                            <div className="flex justify-between items-center mb-1">
+                                <label htmlFor="descripcion" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Descripción</label>
+                                <button 
+                                    type="button" 
+                                    onClick={handleGenerateDescription} 
+                                    disabled={isGenerating}
+                                    className="flex items-center text-xs font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-800 disabled:opacity-50"
+                                >
+                                    {isGenerating ? <Loader2 className="h-3 w-3 mr-1 animate-spin"/> : <Sparkles className="h-3 w-3 mr-1" />}
+                                    {isGenerating ? 'Generando...' : 'Mejorar con IA'}
+                                </button>
+                            </div>
                             <textarea name="descripcion" value={formData.descripcion} onChange={handleChange} rows={3} className={inputClasses}></textarea>
                         </div>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

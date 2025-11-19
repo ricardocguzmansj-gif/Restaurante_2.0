@@ -17,6 +17,7 @@ import { NAVIGATION_ITEMS } from './constants';
 import { FloorPlanPage } from './pages/FloorPlanPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { CustomerPortalPage } from './pages/CustomerPortalPage';
+import { SuperAdminPage } from './pages/SuperAdminPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles: UserRole[] }> = ({ children, allowedRoles }) => {
   const { user } = useAppContext();
@@ -26,6 +27,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles: UserRo
   }
 
   if (!allowedRoles.includes(user.rol)) {
+    // Redirect Super Admin to their specific dashboard if they try to access unauthorized regular routes
+    if (user.rol === UserRole.SUPER_ADMIN) return <Navigate to="/super-admin" replace />;
+    
     const fallbackUrl = NAVIGATION_ITEMS.find(item => item.roles.includes(user.rol))?.href || '/';
     return <Navigate to={fallbackUrl} replace />;
   }
@@ -40,22 +44,31 @@ const AdminApp: React.FC = () => {
     return <LoginPage />;
   }
   
+  // Redirect Super Admin to their dashboard on root load
+  if (user.rol === UserRole.SUPER_ADMIN && window.location.hash === '#/') {
+      return <Navigate to="/super-admin" replace />;
+  }
+  
   const userHomePage = NAVIGATION_ITEMS.find(item => item.roles.includes(user.rol))?.href || '/';
 
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
+         {/* Super Admin Route */}
+        <Route path="super-admin" element={<ProtectedRoute allowedRoles={[UserRole.SUPER_ADMIN]}><SuperAdminPage /></ProtectedRoute>} />
+
+        {/* Standard Routes - Accessible by Super Admin when "logged in" to a restaurant context */}
         <Route index element={<Navigate to={userHomePage} replace />} />
-        <Route path="dashboard" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE]}><DashboardPage /></ProtectedRoute>} />
-        <Route path="pedidos" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.MOZO, UserRole.REPARTO]}><OrdersPage /></ProtectedRoute>} />
-        <Route path="salon" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.MOZO]}><FloorPlanPage /></ProtectedRoute>} />
-        <Route path="gic" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.COCINA]}><KdsPage /></ProtectedRoute>} />
-        <Route path="menu" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE]}><MenuPage /></ProtectedRoute>} />
-        <Route path="inventario" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE]}><InventoryPage /></ProtectedRoute>} />
-        <Route path="clientes" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.MOZO]}><CustomersPage /></ProtectedRoute>} />
-        <Route path="cupones" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE]}><CouponsPage /></ProtectedRoute>} />
-        <Route path="reportes" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE]}><ReportsPage /></ProtectedRoute>} />
-        <Route path="configuracion" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN]}><SettingsPage /></ProtectedRoute>} />
+        <Route path="dashboard" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.SUPER_ADMIN]}><DashboardPage /></ProtectedRoute>} />
+        <Route path="pedidos" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.MOZO, UserRole.REPARTO, UserRole.SUPER_ADMIN]}><OrdersPage /></ProtectedRoute>} />
+        <Route path="salon" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.MOZO, UserRole.SUPER_ADMIN]}><FloorPlanPage /></ProtectedRoute>} />
+        <Route path="gic" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.COCINA, UserRole.SUPER_ADMIN]}><KdsPage /></ProtectedRoute>} />
+        <Route path="menu" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.SUPER_ADMIN]}><MenuPage /></ProtectedRoute>} />
+        <Route path="inventario" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.SUPER_ADMIN]}><InventoryPage /></ProtectedRoute>} />
+        <Route path="clientes" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.MOZO, UserRole.SUPER_ADMIN]}><CustomersPage /></ProtectedRoute>} />
+        <Route path="cupones" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.SUPER_ADMIN]}><CouponsPage /></ProtectedRoute>} />
+        <Route path="reportes" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.GERENTE, UserRole.SUPER_ADMIN]}><ReportsPage /></ProtectedRoute>} />
+        <Route path="configuracion" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.SUPER_ADMIN]}><SettingsPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to={userHomePage} replace />} />
       </Route>
     </Routes>

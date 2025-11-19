@@ -40,6 +40,44 @@ export const api = {
       return restaurants.find(r => r.id === id);
   },
 
+  createRestaurant: async (settings: RestaurantSettings): Promise<Restaurant> => {
+      await simulateDelay(200);
+      const newId = `rest-${Date.now()}`;
+      const newRestaurant: Restaurant = {
+          id: newId,
+          settings: settings
+      };
+      restaurants.push(newRestaurant);
+      saveDataToLocalStorage();
+      return newRestaurant;
+  },
+
+  updateRestaurantSettings: async (restaurantId: string, settings: RestaurantSettings): Promise<RestaurantSettings> => {
+    await simulateDelay(200);
+    const index = restaurants.findIndex(r => r.id === restaurantId);
+    if (index === -1) throw new Error("Restaurant not found");
+    
+    restaurants[index].settings = settings;
+    saveDataToLocalStorage();
+    return { ...restaurants[index].settings };
+  },
+
+  deleteRestaurant: async (restaurantId: string): Promise<void> => {
+      await simulateDelay(300);
+      restaurants = restaurants.filter(r => r.id !== restaurantId);
+      // Cleanup related data
+      users = users.filter(u => u.restaurant_id !== restaurantId);
+      orders = orders.filter(o => o.restaurant_id !== restaurantId);
+      menuItems = menuItems.filter(m => m.restaurant_id !== restaurantId);
+      categories = categories.filter(c => c.restaurant_id !== restaurantId);
+      customers = customers.filter(c => c.restaurant_id !== restaurantId);
+      coupons = coupons.filter(c => c.restaurant_id !== restaurantId);
+      tables = tables.filter(t => t.restaurant_id !== restaurantId);
+      ingredients = ingredients.filter(i => i.restaurant_id !== restaurantId);
+      
+      saveDataToLocalStorage();
+  },
+
   // User
   login: async (email: string, password_provided: string): Promise<User | undefined> => {
     await simulateDelay(200);
@@ -595,16 +633,6 @@ export const api = {
     await simulateDelay(100);
     const restaurant = restaurants.find(r => r.id === restaurantId);
     return restaurant ? restaurant.settings : null;
-  },
-
-  updateRestaurantSettings: async (restaurantId: string, settings: RestaurantSettings): Promise<RestaurantSettings> => {
-    await simulateDelay(200);
-    const index = restaurants.findIndex(r => r.id === restaurantId);
-    if (index === -1) throw new Error("Restaurant not found");
-    
-    restaurants[index].settings = settings;
-    saveDataToLocalStorage();
-    return { ...restaurants[index].settings };
   },
 
   // Tables

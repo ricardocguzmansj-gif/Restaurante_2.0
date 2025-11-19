@@ -3,6 +3,7 @@ import { UserRole, OrderStatus, OrderType, TableStatus } from './types';
 import { BarChart2, Boxes, ChefHat, LayoutDashboard, ListOrdered, LucideIcon, Percent, Settings, ShoppingCart, Truck, Users } from 'lucide-react';
 
 export const ROLES_HIERARCHY: { [key in UserRole]: string[] } = {
+  [UserRole.SUPER_ADMIN]: [UserRole.ADMIN, UserRole.GERENTE, UserRole.MOZO, UserRole.COCINA, UserRole.REPARTO],
   [UserRole.ADMIN]: [UserRole.GERENTE, UserRole.MOZO, UserRole.COCINA, UserRole.REPARTO],
   [UserRole.GERENTE]: [UserRole.MOZO, UserRole.COCINA, UserRole.REPARTO],
   [UserRole.MOZO]: [],

@@ -13,7 +13,8 @@
     "react": "19.2.0",
     "lucide-react": "0.552.0",
     "recharts": "3.3.0",
-    "react-router-dom": "7.9.5"
+    "react-router-dom": "7.9.5",
+    "@google/genai": "^1.30.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

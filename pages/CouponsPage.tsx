@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card } from '../components/ui/Card';
 import { useAppContext } from '../contexts/AppContext';
 import { formatCurrency, formatDate } from '../utils';
-import { PlusCircle, X, Trash2 } from 'lucide-react';
+import { PlusCircle, X, Trash2, Sparkles, Loader2 } from 'lucide-react';
 import { Coupon, UserRole } from '../types';
+import { suggestCoupon } from '../services/ai';
 
 // ToggleSwitch Component
 const ToggleSwitch: React.FC<{ checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }> = ({ checked, onChange, disabled = false }) => {
@@ -21,6 +23,8 @@ const CouponModal: React.FC<{
     onClose: () => void;
     onSave: (coupon: Omit<Coupon, 'id' | 'restaurant_id'> | Coupon) => void;
 }> = ({ coupon, onClose, onSave }) => {
+    const { showToast } = useAppContext();
+    const [isGenerating, setIsGenerating] = useState(false);
     const [formData, setFormData] = useState({
         codigo: '',
         tipo: 'PORCENTAJE' as 'PORCENTAJE' | 'FIJO',
@@ -72,6 +76,23 @@ const CouponModal: React.FC<{
         setFormData(prev => ({ ...prev, activo }));
     };
 
+    const handleSuggest = async () => {
+        setIsGenerating(true);
+        const suggestion = await suggestCoupon();
+        if (suggestion) {
+            setFormData(prev => ({
+                ...prev,
+                codigo: suggestion.codigo,
+                tipo: suggestion.tipo,
+                valor: suggestion.valor,
+            }));
+            showToast(`Sugerencia: ${suggestion.descripcion}`);
+        } else {
+             showToast("No se pudo generar una sugerencia.", "error");
+        }
+        setIsGenerating(false);
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const dataToSave = {
@@ -99,8 +120,19 @@ const CouponModal: React.FC<{
                     </div>
                     <div className="p-6 space-y-4">
                         <div>
-                            <label htmlFor="codigo" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Código</label>
-                            <input type="text" name="codigo" id="codigo" value={formData.codigo} onChange={handleChange} required className={inputClasses} />
+                            <div className="flex justify-between items-center mb-1">
+                                <label htmlFor="codigo" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Código</label>
+                                <button 
+                                    type="button" 
+                                    onClick={handleSuggest} 
+                                    disabled={isGenerating}
+                                    className="flex items-center text-xs font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-800 disabled:opacity-50"
+                                >
+                                    {isGenerating ? <Loader2 className="h-3 w-3 mr-1 animate-spin"/> : <Sparkles className="h-3 w-3 mr-1" />}
+                                    {isGenerating ? 'Generando...' : 'Sugerir Promo'}
+                                </button>
+                            </div>
+                            <input type="text" name="codigo" id="codigo" value={formData.codigo} onChange={handleChange} required className={inputClasses} placeholder="ej. VERANO20" />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>

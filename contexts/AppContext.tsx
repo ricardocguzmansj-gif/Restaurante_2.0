@@ -10,7 +10,8 @@ interface AppContextType {
   login: (email: string, password_provided: string) => Promise<void>;
   logout: () => void;
   currentRestaurantId: string | null;
-  switchRestaurant: (restaurantId: string) => Promise<void>; // For portal use
+  switchRestaurant: (restaurantId: string) => Promise<void>;
+  restaurants: Restaurant[];
   orders: Order[];
   tables: Table[];
   menuItems: MenuItem[];
@@ -50,13 +51,15 @@ interface AppContextType {
   updateCategories: (categories: MenuCategory[]) => Promise<void>;
   createCategory: (name: string) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
-  updateRestaurantSettings: (settings: RestaurantSettings) => Promise<void>;
+  updateRestaurantSettings: (settings: RestaurantSettings, restaurantId?: string) => Promise<void>;
   cleanTable: (tableId: number) => Promise<void>;
   saveTableLayout: (tables: Table[]) => Promise<void>;
   updateTable: (table: Table) => Promise<void>;
   createIngredient: (data: Omit<Ingredient, 'id' | 'restaurant_id'>) => Promise<void>;
   updateIngredient: (data: Ingredient) => Promise<void>;
   deleteIngredient: (id: string) => Promise<void>;
+  createRestaurant: (settings: RestaurantSettings) => Promise<void>;
+  deleteRestaurant: (restaurantId: string) => Promise<void>;
   updateUserLocation: (userId: string, lat: number, lng: number) => Promise<void>;
 }
 
@@ -66,6 +69,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [user, setUser] = useState<User | null>(null);
   const [currentRestaurantId, setCurrentRestaurantId] = useState<string | null>(null);
   
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -117,23 +121,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [showToast]);
 
+  // Initial load for restaurants for Super Admin context
+  useEffect(() => {
+      const loadRestaurants = async () => {
+          const rests = await api.getRestaurants();
+          setRestaurants(rests);
+      };
+      loadRestaurants();
+  }, []);
+
   // Load data when restaurant ID changes (either by login or explicit switch via portal)
   useEffect(() => {
     if (currentRestaurantId) {
         loadInitialData(currentRestaurantId);
     } else {
-        // Reset data if no restaurant is selected
-        setOrders([]);
-        setMenuItems([]);
-        setCustomers([]);
-        setCoupons([]);
-        setUsers([]);
-        setCategories([]);
-        setRestaurantSettings(null);
-        setTables([]);
-        setIngredients([]);
+        // Reset data if no restaurant is selected (except when logged in as Super Admin who sees global list)
+        if (user?.rol !== UserRole.SUPER_ADMIN) {
+            setOrders([]);
+            setMenuItems([]);
+            setCustomers([]);
+            setCoupons([]);
+            setUsers([]);
+            setCategories([]);
+            setRestaurantSettings(null);
+            setTables([]);
+            setIngredients([]);
+        }
     }
-  }, [currentRestaurantId, loadInitialData]);
+  }, [currentRestaurantId, loadInitialData, user]);
 
   const switchRestaurant = async (restaurantId: string) => {
       setCurrentRestaurantId(restaurantId);
@@ -147,9 +162,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Real-time notification polling effect
   useEffect(() => {
-    if (!user || !currentRestaurantId) return; // No polling if not logged in or no restaurant context
+    if (!user || !currentRestaurantId) return; 
 
-    // Create sound object once
     const notificationSound = new Audio('https://cdn.pixabay.com/audio/2022/03/15/audio_2c244a341b.mp3');
     notificationSound.volume = 0.5;
 
@@ -162,19 +176,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (!currentOrders) return;
         
         const newOrders = await api.getOrders(currentRestaurantId);
-        const newUsers = await api.getUsers(currentRestaurantId); // Poll users to get updated locations
+        const newUsers = await api.getUsers(currentRestaurantId);
 
-        // Update users silently if changed (e.g. location updates)
         if (JSON.stringify(users) !== JSON.stringify(newUsers)) {
             setUsers(newUsers);
         }
 
-        // Deep comparison relies on api.getOrders returning deep copies
         if (JSON.stringify(currentOrders) === JSON.stringify(newOrders)) {
-            return; // No changes in orders
+            return; 
         }
 
-        // --- Kitchen Notification ---
         if ([UserRole.ADMIN, UserRole.GERENTE, UserRole.COCINA].includes(user.rol)) {
             const currentNewOrderIds = new Set(currentOrders.filter(o => o.estado === OrderStatus.NUEVO).map(o => o.id));
             const newlyArrivedOrders = newOrders.filter(o => o.estado === OrderStatus.NUEVO && !currentNewOrderIds.has(o.id));
@@ -185,7 +196,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }
         }
 
-        // --- Delivery Staff Notifications ---
         if (user.rol === UserRole.REPARTO) {
             const myOldOrdersMap = new Map<number, Order>(
                 currentOrders.filter(o => o.repartidor_id === user.id).map(o => [o.id, o])
@@ -194,16 +204,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
             myNewOrders.forEach(newOrder => {
                 const oldOrder = myOldOrdersMap.get(newOrder.id);
-                
-                // Newly assigned delivery
                 if (!oldOrder) {
-                     // Only notify if it's an active assignment (Ready or On the way)
                      if ([OrderStatus.LISTO, OrderStatus.EN_CAMINO].includes(newOrder.estado)) {
                         showToast(`📦 ¡Nuevo pedido asignado! #${newOrder.id}`, 'success');
                         playSound();
                      }
                 }
-                // Status change on an existing delivery
                 else if (oldOrder.estado !== newOrder.estado) {
                     showToast(`Pedido #${newOrder.id} actualizado: ${newOrder.estado}`, 'success');
                     playSound();
@@ -211,19 +217,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             });
         }
         
-        // Update the main state to keep the UI in sync across the app
         setOrders(newOrders);
 
-    }, 5000); // Poll every 5 seconds
+    }, 5000); 
 
     return () => clearInterval(intervalId);
-  }, [user, currentRestaurantId, showToast, users]); // Add users to dependency if used in logic, though we just set it.
+  }, [user, currentRestaurantId, showToast, users]); 
 
   const login = async (email: string, password_provided: string) => {
     const selectedUser = await api.login(email, password_provided);
     if (selectedUser) {
       setUser(selectedUser);
-      setCurrentRestaurantId(selectedUser.restaurant_id);
+      if (selectedUser.rol === UserRole.SUPER_ADMIN) {
+          setCurrentRestaurantId(null); // Super admin starts at dashboard, no restaurant selected initially
+      } else {
+          setCurrentRestaurantId(selectedUser.restaurant_id);
+      }
     } else {
       showToast("Email o contraseña incorrectos", "error");
     }
@@ -317,7 +326,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             order.id === orderId ? updatedOrder : order
         ));
         
-        // reload related data that might have changed
         const [updatedIngredients, updatedUsers, updatedTables] = await Promise.all([
             api.getIngredients(currentRestaurantId),
             api.getUsers(currentRestaurantId),
@@ -596,17 +604,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const updateUserLocation = async (userId: string, lat: number, lng: number) => {
-     try {
-         await api.updateUserLocation(userId, lat, lng);
-         // We optimistically update the local state for instant feedback, 
-         // though the polling interval will sync it eventually.
-         setUsers(prev => prev.map(u => u.id === userId ? { ...u, last_location: { lat, lng, updated_at: new Date().toISOString() } } : u));
-     } catch (error) {
-         console.error("Failed to update user location", error);
-     }
-  };
-
   const deleteUser = async (userId: string) => {
     try {
       await api.deleteUser(userId);
@@ -668,6 +665,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const updateCategories = async (categories: MenuCategory[]) => {
+    try {
+        const newCategories = await api.updateCategories(categories);
+        setCategories(newCategories);
+        showToast("Orden de categorías actualizado con éxito.");
+    } catch (error) {
+        console.error("Error al actualizar categorías", error);
+        showToast("Error al actualizar las categorías", "error");
+    }
+  };
+
   const createCategory = async (name: string) => {
     if (!currentRestaurantId) return;
     try {
@@ -691,36 +699,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
   
-  const updateCategories = async (updatedCats: MenuCategory[]) => {
+  const updateRestaurantSettings = async (settings: RestaurantSettings, restaurantId?: string) => {
+    const targetId = restaurantId || currentRestaurantId;
+    if (!targetId) return;
     try {
-        const newCategories = await api.updateCategories(updatedCats);
-        setCategories(newCategories);
-        showToast("Orden de categorías actualizado con éxito.");
-    } catch (error) {
-        console.error("Error al actualizar categorías", error);
-        showToast("Error al actualizar las categorías", "error");
-    }
-  };
-  
-  const updateRestaurantSettings = async (settings: RestaurantSettings) => {
-    if (!currentRestaurantId) return;
-    try {
-      const updatedSettings = await api.updateRestaurantSettings(currentRestaurantId, settings);
-      setRestaurantSettings(updatedSettings);
+      const updatedSettings = await api.updateRestaurantSettings(targetId, settings);
+      
+      if (targetId === currentRestaurantId) {
+        setRestaurantSettings(updatedSettings);
+      }
+      
+      // Update list if it exists (for Super Admin view)
+      setRestaurants(prev => prev.map(r => r.id === targetId ? { ...r, settings: updatedSettings } : r));
+
       showToast("Configuración del restaurante guardada con éxito.");
     } catch (error) {
       console.error("Failed to update settings", error);
       showToast("Error al guardar la configuración", "error");
-    }
-  };
-
-  const updateTable = async (table: Table) => {
-    try {
-        const updatedTable = await api.updateTable(table);
-        setTables(prev => prev.map(t => t.id === updatedTable.id ? updatedTable : t));
-    } catch (error) {
-        console.error("Error updating table", error);
-        showToast("Error al actualizar la mesa.", "error");
     }
   };
 
@@ -740,6 +735,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch (error) {
         console.error("Error saving table layout", error);
         showToast("Error al guardar el diseño del salón", "error");
+    }
+  };
+
+  const updateTable = async (table: Table) => {
+    try {
+        const updatedTable = await api.updateTable(table);
+        setTables(prev => prev.map(t => t.id === updatedTable.id ? updatedTable : t));
+    } catch (error) {
+        console.error("Error updating table", error);
+        showToast("Error al actualizar la mesa.", "error");
     }
   };
 
@@ -782,6 +787,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const createRestaurant = async (settings: RestaurantSettings) => {
+      try {
+          const newRestaurant = await api.createRestaurant(settings);
+          setRestaurants(prev => [...prev, newRestaurant]);
+          showToast(`Restaurante '${newRestaurant.settings.nombre}' creado.`);
+      } catch (error) {
+          console.error(error);
+          showToast("Error al crear restaurante", "error");
+      }
+  };
+
+  const deleteRestaurant = async (restaurantId: string) => {
+      try {
+          await api.deleteRestaurant(restaurantId);
+          setRestaurants(prev => prev.filter(r => r.id !== restaurantId));
+          showToast("Restaurante eliminado.");
+      } catch (error) {
+           console.error(error);
+           showToast("Error al eliminar restaurante", "error");
+      }
+  };
+
+  const updateUserLocation = async (userId: string, lat: number, lng: number) => {
+     try {
+         await api.updateUserLocation(userId, lat, lng);
+         setUsers(prev => prev.map(u => u.id === userId ? { ...u, last_location: { lat, lng, updated_at: new Date().toISOString() } } : u));
+     } catch (error) {
+         console.error("Failed to update user location", error);
+     }
+  };
+
   const value = {
     user,
     users,
@@ -789,6 +825,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     logout,
     currentRestaurantId,
     switchRestaurant,
+    restaurants,
     orders,
     tables,
     menuItems,
@@ -835,6 +872,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     createIngredient,
     updateIngredient,
     deleteIngredient,
+    createRestaurant,
+    deleteRestaurant,
     updateUserLocation,
   };
 

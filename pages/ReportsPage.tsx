@@ -1,10 +1,12 @@
+
 import React, { useState, useMemo } from 'react';
 import { Card } from '../components/ui/Card';
-import { Download, TrendingUp, Clock, Users, Award, X, FileText, Code, Printer } from 'lucide-react';
+import { Download, TrendingUp, Users, Award, X, FileText, Code, Printer, Sparkles, Loader2 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { OrderType, OrderStatus, UserRole } from '../types';
 import { formatCurrency } from '../utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { analyzeReport } from '../services/ai';
 
 const TabButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
     <button
@@ -20,10 +22,44 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
 );
 
 const GeneralReportTab: React.FC<{ data: any }> = ({ data }) => {
+    const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+
     if (!data) return null;
     const PIE_COLORS = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6'];
+    
+    const handleAiAnalysis = async () => {
+        setIsAnalyzing(true);
+        const analysis = await analyzeReport(data);
+        setAiAnalysis(analysis);
+        setIsAnalyzing(false);
+    }
+
     return (
         <div className="space-y-8">
+            {/* AI Analysis Section */}
+            <div className="flex justify-end">
+                <button 
+                    onClick={handleAiAnalysis} 
+                    disabled={isAnalyzing}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-70 transition-all shadow-sm"
+                >
+                    {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {isAnalyzing ? 'Analizando...' : 'Analizar con Gemini AI'}
+                </button>
+            </div>
+            
+            {aiAnalysis && (
+                <div className="p-6 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg animate-fade-in-down">
+                     <h4 className="font-bold text-lg text-purple-800 dark:text-purple-300 mb-3 flex items-center gap-2">
+                        <Sparkles className="h-5 w-5" /> Insights de Gemini
+                    </h4>
+                    <div className="whitespace-pre-wrap font-sans text-gray-800 dark:text-gray-200 text-sm leading-relaxed">
+                        {aiAnalysis}
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <Card className="flex items-center">
                     <div className="p-3 rounded-full mr-4 bg-green-500"><TrendingUp className="h-6 w-6 text-white"/></div>

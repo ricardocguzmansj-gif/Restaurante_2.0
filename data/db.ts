@@ -36,6 +36,9 @@ export const demoRestaurants: Restaurant[] = [
 
 // --- USUARIOS ---
 export const demoUsers: User[] = [
+  // SUPER ADMIN
+  { id: 'user-super-admin', restaurant_id: 'global', nombre: 'Super Admin', email: 'super@admin.com', rol: UserRole.SUPER_ADMIN, avatar_url: `https://i.pravatar.cc/150?u=super`, password: 'password' },
+
   // Pizzeria Users
   { id: 'user-admin-1', restaurant_id: demoRestaurantId, nombre: 'Admin Pizarra', email: 'admin@pizarra.es', rol: UserRole.ADMIN, avatar_url: `https://i.pravatar.cc/150?u=admin`, password: 'password' },
   { id: 'user-gerente-1', restaurant_id: demoRestaurantId, nombre: 'Gerente Pizarra', email: 'gerente@pizarra.es', rol: UserRole.GERENTE, avatar_url: `https://i.pravatar.cc/150?u=gerente`, password: 'password' },

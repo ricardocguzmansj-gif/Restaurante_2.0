@@ -1,5 +1,6 @@
 
 export enum UserRole {
+  SUPER_ADMIN = "SUPER_ADMIN",
   ADMIN = "ADMIN",
   GERENTE = "GERENTE",
   MOZO = "MOZO/A",
@@ -9,7 +10,7 @@ export enum UserRole {
 
 export interface User {
   id: string;
-  restaurant_id: string;
+  restaurant_id: string; // For SUPER_ADMIN, this might be 'global' or null, but for simplicity we keep it.
   nombre: string;
   email: string;
   rol: UserRole;
