@@ -17,6 +17,11 @@ export interface User {
   estado_delivery?: 'DISPONIBLE' | 'EN_REPARTO';
   is_deleted?: boolean;
   password?: string;
+  last_location?: {
+    lat: number;
+    lng: number;
+    updated_at: string;
+  };
 }
 
 export interface MenuCategory {
@@ -130,6 +135,7 @@ export enum TableStatus {
 
 export interface Table {
     id: number;
+    restaurant_id: string;
     nombre: string;
     estado: TableStatus;
     order_id: number | null;
@@ -180,6 +186,11 @@ export interface RestaurantSettings {
   iva_rate: number;
   precios_con_iva: boolean;
   propina_opciones: number[];
+}
+
+export interface Restaurant {
+    id: string;
+    settings: RestaurantSettings;
 }
 
 

@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { useAppContext } from '../contexts/AppContext';
 import { formatCurrency, formatDate, formatTimeAgo } from '../utils';
-import { PlusCircle, Search, X, Minus, Plus, MapPin, Truck, UserCheck, Clock, List, LayoutGrid, CreditCard, QrCode, Smartphone, DollarSign, MessageSquare, Split, Pencil, ShieldCheck, AlertTriangle, Eye, Filter, Calendar } from 'lucide-react';
+import { PlusCircle, Search, X, Minus, Plus, MapPin, Truck, UserCheck, Clock, List, LayoutGrid, CreditCard, QrCode, Smartphone, DollarSign, MessageSquare, Split, Pencil, ShieldCheck, AlertTriangle, Eye, Filter, Calendar, Navigation } from 'lucide-react';
 import { Order, OrderStatus, UserRole, OrderType, MenuItem as MenuItemType, OrderItem, Customer, PaymentDetails, User } from '../types';
 import { ORDER_STATUS_COLORS } from '../constants';
 
@@ -580,29 +580,96 @@ const EditOrderModal: React.FC<{ order: Order; onClose: () => void }> = ({ order
     );
 };
 
-const MapModal: React.FC<{ customer: Customer; onClose: () => void; }> = ({ customer, onClose }) => (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center">
-                <h3 className="font-semibold">Ubicación de Entrega</h3>
-                <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="p-4">
-                <p className="font-bold">{customer.nombre}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">{customer.direccion.calle}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">{customer.direccion.ciudad}, {customer.direccion.codigo_postal}</p>
-                <div className="mt-4 h-64 bg-gray-200 dark:bg-gray-700 rounded-md flex items-center justify-center">
-                    <img 
-                        src={`https://picsum.photos/seed/${customer.direccion.lat},${customer.direccion.lng}/600/400`} 
-                        alt="Mapa simulado" 
-                        className="w-full h-full object-cover rounded-md"
-                    />
-                    <MapPin className="h-8 w-8 text-red-500 absolute" />
+const MapModal: React.FC<{ customer: Customer; onClose: () => void; driver?: User | null }> = ({ customer, onClose, driver }) => {
+    
+    // Calculate linear distance (Haversine simple approx)
+    const getDistance = () => {
+        if (!driver?.last_location) return null;
+        const R = 6371; // km
+        const dLat = (customer.direccion.lat - driver.last_location.lat) * Math.PI / 180;
+        const dLon = (customer.direccion.lng - driver.last_location.lng) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(driver.last_location.lat * Math.PI / 180) * Math.cos(customer.direccion.lat * Math.PI / 180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return (R * c).toFixed(2);
+    }
+
+    const distance = getDistance();
+    const mapUrl = driver?.last_location 
+        ? `https://www.google.com/maps/dir/?api=1&origin=${driver.last_location.lat},${driver.last_location.lng}&destination=${customer.direccion.lat},${customer.direccion.lng}`
+        : `https://www.google.com/maps/search/?api=1&query=${customer.direccion.lat},${customer.direccion.lng}`;
+
+    return (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+                <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center">
+                    <h3 className="font-semibold">Rastreo de Entrega</h3>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="p-4">
+                    <div className="mb-4 flex justify-between">
+                        <div>
+                            <p className="font-bold text-sm text-gray-500">CLIENTE</p>
+                            <p className="font-bold">{customer.nombre}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-300">{customer.direccion.calle}</p>
+                        </div>
+                        {driver && (
+                            <div className="text-right">
+                                <p className="font-bold text-sm text-gray-500">REPARTIDOR</p>
+                                <p className="font-bold">{driver.nombre}</p>
+                                {distance && <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold">A {distance} km del destino</p>}
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="mt-4 h-64 bg-gray-200 dark:bg-gray-700 rounded-md relative overflow-hidden group border dark:border-gray-600">
+                        <img 
+                            src={`https://picsum.photos/seed/${customer.direccion.lat},${customer.direccion.lng}/600/400`} 
+                            alt="Mapa simulado" 
+                            className="w-full h-full object-cover opacity-50 group-hover:opacity-80 transition-opacity"
+                        />
+                        {/* Line simulating route */}
+                        {driver?.last_location && (
+                            <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                                <line x1="33%" y1="33%" x2="50%" y2="50%" stroke="#3b82f6" strokeWidth="3" strokeDasharray="5,5" />
+                            </svg>
+                        )}
+
+                        <div className="absolute inset-0 pointer-events-none">
+                            {/* Customer Pin - Centered */}
+                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+                                <MapPin className="h-8 w-8 text-red-500 drop-shadow-md" />
+                                <span className="bg-white dark:bg-gray-800 text-xs px-1 rounded shadow">Cliente</span>
+                            </div>
+
+                            {/* Driver Pin - Offset based on simulation */}
+                            {driver?.last_location && (
+                                <div className="absolute top-1/3 left-1/3 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center transition-all duration-1000 ease-in-out">
+                                    <div className="bg-blue-500 p-1.5 rounded-full shadow-lg animate-pulse">
+                                        <Truck className="h-5 w-5 text-white" />
+                                    </div>
+                                    <span className="bg-white dark:bg-gray-800 text-xs px-1 rounded shadow mt-1">Repartidor</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    
+                    <div className="mt-4">
+                        <a 
+                            href={mapUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-2 w-full py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                            <Navigation className="h-4 w-4" /> Ver Ruta en Google Maps
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 const PaymentModal: React.FC<{ order: Order; onClose: () => void; }> = ({ order, onClose }) => {
     const { generatePaymentQR, addPaymentToOrder, updateOrder, restaurantSettings } = useAppContext();
@@ -774,14 +841,22 @@ const SplitBillModal: React.FC<{
 }
 
 const DeliveryManagementView: React.FC<{ 
-    onShowMap: (customer: Customer) => void;
+    onShowMap: (customer: Customer, driver?: User | null) => void;
     onViewDetails: (order: Order) => void;
 }> = ({ onShowMap, onViewDetails }) => {
-    const { orders, users, customers, assignRepartidor, showToast } = useAppContext();
+    const { orders, users, customers, assignRepartidor, showToast, updateUserLocation } = useAppContext();
     const [dateRange, setDateRange] = useState({ from: '', to: '' });
     const [dragOverRepartidor, setDragOverRepartidor] = useState<string | null>(null);
+    const [sharingLocationFor, setSharingLocationFor] = useState<Set<number>>(new Set());
+    const locationIntervals = useRef<Map<number, number>>(new Map());
     
     const repartidores = users.filter(u => u.rol === UserRole.REPARTO);
+
+    useEffect(() => {
+        return () => {
+            locationIntervals.current.forEach(id => clearInterval(id));
+        };
+    }, []);
     
     const deliveryOrders = useMemo(() => {
         return orders.filter(order => {
@@ -807,6 +882,7 @@ const DeliveryManagementView: React.FC<{
     const waitingOrders = deliveryOrders.filter(o => !o.repartidor_id && o.estado === OrderStatus.LISTO && o.payments.reduce((s,p) => s+p.amount, 0) >= o.total);
     const activeDeliveries = deliveryOrders.filter(o => o.repartidor_id && ![OrderStatus.ENTREGADO, OrderStatus.CANCELADO, OrderStatus.DEVOLUCION].includes(o.estado));
     const customersMap = new Map(customers.map(c => [c.id, c]));
+    const repartidoresMap = new Map(repartidores.map(r => [r.id, r]));
     
     const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setDateRange(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -830,6 +906,38 @@ const DeliveryManagementView: React.FC<{
         } else {
             showToast("Este repartidor no está disponible para recibir pedidos.", "error");
         }
+    };
+
+    const handleToggleLocation = (orderId: number, driverId: string) => {
+        const newSharingSet = new Set(sharingLocationFor);
+        if (newSharingSet.has(orderId)) {
+            newSharingSet.delete(orderId);
+            clearInterval(locationIntervals.current.get(orderId));
+            locationIntervals.current.delete(orderId);
+            showToast(`Se dejó de compartir la ubicación.`, 'success');
+        } else {
+            if ("geolocation" in navigator) {
+                newSharingSet.add(orderId);
+                showToast(`Iniciando rastreo GPS...`, 'success');
+                
+                const sendLocation = () => {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                             updateUserLocation(driverId, position.coords.latitude, position.coords.longitude);
+                        },
+                        (error) => console.error(error),
+                        { enableHighAccuracy: true }
+                    );
+                };
+                sendLocation();
+                const intervalId = window.setInterval(sendLocation, 5000);
+                locationIntervals.current.set(orderId, intervalId);
+            } else {
+                showToast("Geolocalización no soportada.", "error");
+                return;
+            }
+        }
+        setSharingLocationFor(newSharingSet);
     };
 
     return (
@@ -866,7 +974,10 @@ const DeliveryManagementView: React.FC<{
                                     >
                                         <div className="flex items-center">
                                             <img src={r.avatar_url} className="h-8 w-8 rounded-full mr-3" alt={r.nombre} />
-                                            <span className="font-medium text-sm">{r.nombre}</span>
+                                            <div className="flex flex-col">
+                                                <span className="font-medium text-sm">{r.nombre}</span>
+                                                {r.last_location && <span className="text-[10px] text-gray-400">Ubicación hace: {formatTimeAgo(r.last_location.updated_at)}</span>}
+                                            </div>
                                         </div>
                                         <div className="flex items-center text-xs font-semibold">
                                             <span className={`w-2.5 h-2.5 rounded-full mr-2 ${r.estado_delivery === 'DISPONIBLE' ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
@@ -920,7 +1031,7 @@ const DeliveryManagementView: React.FC<{
                             <ul className="space-y-3 max-h-96 overflow-y-auto pr-2">
                             {activeDeliveries.map(order => {
                                  const customer = customersMap.get(order.customer_id!);
-                                 const repartidor = repartidores.find(r => r.id === order.repartidor_id);
+                                 const repartidor = repartidoresMap.get(order.repartidor_id!);
                                  return (
                                     <li key={order.id} className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                                          <div className="flex flex-wrap justify-between items-start">
@@ -932,8 +1043,17 @@ const DeliveryManagementView: React.FC<{
                                             <div className="flex flex-col items-end gap-1">
                                                  <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center"><Clock className="w-3 h-3 mr-1" />{formatTimeAgo(order.creado_en)}</p>
                                                  <div className="flex gap-2 mt-1">
-                                                    <button onClick={() => customer && onShowMap(customer)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-500 rounded-lg hover:bg-blue-600"><MapPin className="w-3 h-3" /> Mapa</button>
+                                                    <button onClick={() => customer && onShowMap(customer, repartidor)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-500 rounded-lg hover:bg-blue-600"><MapPin className="w-3 h-3" /> Mapa</button>
                                                     <button onClick={() => onViewDetails(order)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"><List className="w-3 h-3" /> Detalles</button>
+                                                    {repartidor && (
+                                                        <button
+                                                            onClick={() => handleToggleLocation(order.id, repartidor.id)}
+                                                            className={`px-2 py-1 text-xs rounded border ${sharingLocationFor.has(order.id) ? 'bg-green-100 border-green-500 text-green-700' : 'bg-white border-gray-300'}`}
+                                                            title="Simular GPS del Repartidor"
+                                                        >
+                                                            {sharingLocationFor.has(order.id) ? 'GPS Activo' : 'Activar GPS'}
+                                                        </button>
+                                                    )}
                                                  </div>
                                             </div>
                                         </div>
@@ -990,7 +1110,7 @@ const Pagination: React.FC<{
 };
 
 export const OrdersPage: React.FC = () => {
-    const { orders, user, customers, users, updateOrderStatus, showToast, assignMozoToOrder, cancelOrder, assignRepartidor } = useAppContext();
+    const { orders, user, customers, users, updateOrderStatus, showToast, assignMozoToOrder, cancelOrder, assignRepartidor, updateUserLocation } = useAppContext();
     const [searchParams] = useSearchParams();
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<OrderStatus | 'ALL'>('ALL');
@@ -1000,7 +1120,7 @@ export const OrdersPage: React.FC = () => {
     const [editingOrder, setEditingOrder] = useState<Order | null>(null);
     const [payingOrder, setPayingOrder] = useState<Order | null>(null);
     const [view, setView] = useState<'list' | 'delivery'>('list');
-    const [mapCustomer, setMapCustomer] = useState<Customer | null>(null);
+    const [mapData, setMapData] = useState<{customer: Customer, driver: User | null} | null>(null);
     const [orderToCancel, setOrderToCancel] = useState<Order | null>(null);
     const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
     
@@ -1079,25 +1199,33 @@ export const OrdersPage: React.FC = () => {
                 showToast(`Se dejó de compartir la ubicación para el pedido #${orderId}.`);
             } else {
                 // Start sharing
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        newSharingSet.add(orderId);
-                        console.log(`Ubicación inicial para pedido #${orderId}:`, position.coords.latitude, position.coords.longitude);
-                        showToast(`Ubicación compartida para el pedido #${orderId}.`, 'success');
+                if ("geolocation" in navigator) {
+                    newSharingSet.add(orderId);
+                    showToast(`Compartiendo ubicación para el pedido #${orderId}...`, 'success');
 
-                        const intervalId = window.setInterval(() => {
-                            navigator.geolocation.getCurrentPosition((pos) => {
-                                console.log(`Actualización de ubicación para pedido #${orderId}:`, pos.coords.latitude, pos.coords.longitude);
-                            });
-                        }, 10000); // every 10 seconds
-                        locationIntervals.current.set(orderId, intervalId);
-                        setSharingLocationFor(newSharingSet);
-                    },
-                    (error) => {
-                        console.error("Error de geolocalización:", error);
-                        showToast("No se pudo obtener la ubicación. Asegúrate de tener los permisos activados.", "error");
-                    }
-                );
+                    // Function to send location to backend
+                    const sendLocation = () => {
+                        navigator.geolocation.getCurrentPosition(
+                            (position) => {
+                                updateUserLocation(user.id, position.coords.latitude, position.coords.longitude);
+                            },
+                            (error) => {
+                                console.error("Error fetching location", error);
+                            },
+                            { enableHighAccuracy: true }
+                        );
+                    };
+
+                    // Send immediately
+                    sendLocation();
+
+                    // Send every 10 seconds
+                    const intervalId = window.setInterval(sendLocation, 10000); 
+                    locationIntervals.current.set(orderId, intervalId);
+                } else {
+                     showToast("Geolocalización no soportada en este navegador.", "error");
+                     return;
+                }
             }
              setSharingLocationFor(newSharingSet);
         };
@@ -1615,14 +1743,14 @@ export const OrdersPage: React.FC = () => {
                 </Card>
             ) : (
                 <DeliveryManagementView 
-                    onShowMap={(customer) => setMapCustomer(customer)} 
+                    onShowMap={(customer, driver) => setMapData({customer, driver: driver || null})} 
                     onViewDetails={setViewingOrder}
                 />
             )}
             
             {isCreateModalOpen && <CreateOrderModal onClose={() => setIsCreateModalOpen(false)} />}
             {editingOrder && <EditOrderModal order={editingOrder} onClose={() => setEditingOrder(null)} />}
-            {mapCustomer && <MapModal customer={mapCustomer} onClose={() => setMapCustomer(null)} />}
+            {mapData && <MapModal customer={mapData.customer} driver={mapData.driver} onClose={() => setMapData(null)} />}
             {orderForPayment && <PaymentModal order={orderForPayment} onClose={() => setPayingOrder(null)} />}
             {viewingOrder && <OrderDetailsModal order={viewingOrder} onClose={() => setViewingOrder(null)} />}
             {orderToCancel && (

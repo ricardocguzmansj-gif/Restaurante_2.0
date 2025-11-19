@@ -1,5 +1,6 @@
-import { Order, OrderStatus, MenuItem, User, Customer, Coupon, OrderType, UserRole, PaymentDetails, MenuCategory, RestaurantSettings, Table, Ingredient, TableStatus } from '../types';
-import { demoOrders, demoMenuItems, demoUsers, demoCustomers, demoCoupons, demoRestaurantId, demoCategories, demoRestaurantSettings, demoTables, demoIngredients } from '../data/db';
+
+import { Order, OrderStatus, MenuItem, User, Customer, Coupon, OrderType, UserRole, PaymentDetails, MenuCategory, RestaurantSettings, Table, Ingredient, TableStatus, Restaurant } from '../types';
+import { demoOrders, demoMenuItems, demoUsers, demoCustomers, demoCoupons, demoCategories, demoRestaurants, demoTables, demoIngredients } from '../data/db';
 
 // This is a mock API. In a real application, this would make network requests.
 // For this demo, we manipulate in-memory arrays to simulate a backend database.
@@ -9,7 +10,7 @@ let customers: Customer[] = JSON.parse(localStorage.getItem('customers') || 'nul
 let coupons: Coupon[] = JSON.parse(localStorage.getItem('coupons') || 'null') || [...demoCoupons];
 let users: User[] = JSON.parse(localStorage.getItem('users') || 'null') || [...demoUsers];
 let categories: MenuCategory[] = JSON.parse(localStorage.getItem('categories') || 'null') || [...demoCategories];
-let restaurantSettings: RestaurantSettings = JSON.parse(localStorage.getItem('restaurantSettings') || 'null') || {...demoRestaurantSettings};
+let restaurants: Restaurant[] = JSON.parse(localStorage.getItem('restaurants') || 'null') || [...demoRestaurants];
 let tables: Table[] = JSON.parse(localStorage.getItem('tables') || 'null') || [...demoTables];
 let ingredients: Ingredient[] = JSON.parse(localStorage.getItem('ingredients') || 'null') || [...demoIngredients];
 
@@ -20,7 +21,7 @@ const saveDataToLocalStorage = () => {
     localStorage.setItem('coupons', JSON.stringify(coupons));
     localStorage.setItem('users', JSON.stringify(users));
     localStorage.setItem('categories', JSON.stringify(categories));
-    localStorage.setItem('restaurantSettings', JSON.stringify(restaurantSettings));
+    localStorage.setItem('restaurants', JSON.stringify(restaurants));
     localStorage.setItem('tables', JSON.stringify(tables));
     localStorage.setItem('ingredients', JSON.stringify(ingredients));
 }
@@ -28,6 +29,17 @@ const saveDataToLocalStorage = () => {
 const simulateDelay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 export const api = {
+  // Restaurants
+  getRestaurants: async (): Promise<Restaurant[]> => {
+      await simulateDelay(100);
+      return [...restaurants];
+  },
+
+  getRestaurantById: async (id: string): Promise<Restaurant | undefined> => {
+      await simulateDelay(100);
+      return restaurants.find(r => r.id === id);
+  },
+
   // User
   login: async (email: string, password_provided: string): Promise<User | undefined> => {
     await simulateDelay(200);
@@ -44,18 +56,17 @@ export const api = {
     return undefined;
   },
 
-  getUsers: async (): Promise<User[]> => {
+  getUsers: async (restaurantId: string): Promise<User[]> => {
     await simulateDelay(100);
-    return [...users].filter(u => !u.is_deleted);
+    return [...users].filter(u => !u.is_deleted && u.restaurant_id === restaurantId);
   },
 
-  createUser: async (userData: Omit<User, 'id' | 'restaurant_id' | 'avatar_url'>): Promise<User> => {
+  createUser: async (userData: Omit<User, 'id' | 'avatar_url'>): Promise<User> => {
     await simulateDelay(200);
     const newId = `user-${Date.now()}`;
     const newUser: User = {
       ...userData,
       id: newId,
-      restaurant_id: demoRestaurantId,
       avatar_url: `https://i.pravatar.cc/150?u=${newId}`,
       is_deleted: false,
     };
@@ -75,16 +86,29 @@ export const api = {
     return { ...users[userIndex] };
   },
 
+  updateUserLocation: async (userId: string, lat: number, lng: number): Promise<void> => {
+      // No delay needed for location updates to keep it snappy
+      const userIndex = users.findIndex(u => u.id === userId);
+      if (userIndex !== -1) {
+          users[userIndex].last_location = {
+              lat,
+              lng,
+              updated_at: new Date().toISOString()
+          };
+          saveDataToLocalStorage();
+      }
+  },
+
   deleteUser: async (userId: string): Promise<void> => {
     await simulateDelay(200);
     const userIndex = users.findIndex(u => u.id === userId);
     if (userIndex === -1) throw new Error("User not found");
     
     const userToDelete = users[userIndex];
-    const adminCount = users.filter(u => u.rol === UserRole.ADMIN && !u.is_deleted).length;
+    const adminCount = users.filter(u => u.rol === UserRole.ADMIN && !u.is_deleted && u.restaurant_id === userToDelete.restaurant_id).length;
 
     if (userToDelete.rol === UserRole.ADMIN && adminCount <= 1) {
-      throw new Error("No se puede eliminar al último administrador.");
+      throw new Error("No se puede eliminar al último administrador del restaurante.");
     }
     
     users[userIndex].is_deleted = true;
@@ -92,9 +116,12 @@ export const api = {
   },
 
   // Orders
-  getOrders: async (): Promise<Order[]> => {
+  getOrders: async (restaurantId: string): Promise<Order[]> => {
     await simulateDelay(300);
-    return [...orders];
+    // IMPORTANT: Return deep copy to prevent reference sharing in mock environment
+    // This ensures polling mechanism detects changes correctly.
+    const restaurantOrders = orders.filter(o => o.restaurant_id === restaurantId);
+    return JSON.parse(JSON.stringify(restaurantOrders));
   },
   
   createOrder: async (newOrderData: Omit<Order, 'id' | 'creado_en' | 'payments' | 'estado' | 'repartidor_id'>): Promise<Order> => {
@@ -169,7 +196,7 @@ export const api = {
         throw new Error("El pedido no puede ser cancelado en su estado actual.");
     }
     
-    // Return stock if it was deducted (i.e., order was in preparation or beyond)
+    // Return stock if it was deducted
     const stockDeductedStates = [
         OrderStatus.EN_PREPARACION,
         OrderStatus.LISTO,
@@ -205,7 +232,7 @@ export const api = {
 
     // If it was a sala order, update the table
     if (order.table_id && order.tipo === OrderType.SALA) {
-         const tableIndex = tables.findIndex(t => t.id === order.table_id && t.order_id === order.id);
+         const tableIndex = tables.findIndex(t => t.id === order.table_id && t.order_id === order.id && t.restaurant_id === order.restaurant_id);
          if (tableIndex !== -1) {
              tables[tableIndex].estado = TableStatus.NECESITA_LIMPIEZA;
              tables[tableIndex].order_id = null;
@@ -251,7 +278,10 @@ export const api = {
     if (orderIndex === -1) throw new Error("Order not found");
 
     const order = orders[orderIndex];
-    const qrData = JSON.stringify({ orderId: order.id, total: amount, restaurant: restaurantSettings.nombre });
+    const restaurant = restaurants.find(r => r.id === order.restaurant_id);
+    const restaurantName = restaurant?.settings.nombre || 'Restaurante';
+
+    const qrData = JSON.stringify({ orderId: order.id, total: amount, restaurant: restaurantName });
     const qr_code_url = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrData)}`;
 
     (order as any).last_qr_code_url = qr_code_url;
@@ -327,18 +357,16 @@ export const api = {
   },
 
   // Categories
-  getCategories: async (): Promise<MenuCategory[]> => {
+  getCategories: async (restaurantId: string): Promise<MenuCategory[]> => {
     await simulateDelay(100);
-    return [...categories].sort((a, b) => a.orden - b.orden);
+    return categories.filter(c => c.restaurant_id === restaurantId).sort((a, b) => a.orden - b.orden);
   },
 
-  createCategory: async (name: string): Promise<MenuCategory> => {
+  createCategory: async (categoryData: Omit<MenuCategory, 'id'>): Promise<MenuCategory> => {
     await simulateDelay(200);
     const newCategory: MenuCategory = {
+      ...categoryData,
       id: `cat-${Date.now()}`,
-      restaurant_id: demoRestaurantId,
-      nombre: name,
-      orden: (categories.length > 0 ? Math.max(...categories.map(c => c.orden)) : 0) + 1,
     };
     categories.push(newCategory);
     saveDataToLocalStorage();
@@ -351,9 +379,14 @@ export const api = {
       ...cat,
       orden: index + 1,
     }));
-    categories = reorderedCategories;
+    // Update global categories array while preserving other restaurants' categories
+    const otherCategories = categories.filter(c => !reorderedCategories.some(rc => rc.id === c.id));
+    categories = [...otherCategories, ...reorderedCategories];
+    
     saveDataToLocalStorage();
-    return [...categories].sort((a, b) => a.orden - b.orden);
+    // Return sorted categories for the specific restaurant
+    const restaurantId = reorderedCategories[0]?.restaurant_id;
+    return categories.filter(c => c.restaurant_id === restaurantId).sort((a, b) => a.orden - b.orden);
   },
 
   deleteCategory: async (categoryId: string): Promise<void> => {
@@ -367,18 +400,17 @@ export const api = {
   },
 
   // Menu Items
-  getMenuItems: async (): Promise<MenuItem[]> => {
+  getMenuItems: async (restaurantId: string): Promise<MenuItem[]> => {
     await simulateDelay(300);
-    return [...menuItems];
+    return menuItems.filter(m => m.restaurant_id === restaurantId);
   },
 
-  createMenuItem: async (itemData: Omit<MenuItem, 'id' | 'restaurant_id'>): Promise<MenuItem> => {
+  createMenuItem: async (itemData: Omit<MenuItem, 'id'>): Promise<MenuItem> => {
     await simulateDelay(200);
     const newId = `item-${Date.now()}`;
     const newItem: MenuItem = {
       ...itemData,
       id: newId,
-      restaurant_id: demoRestaurantId,
       is_deleted: false,
     };
     menuItems = [newItem, ...menuItems];
@@ -426,23 +458,22 @@ export const api = {
   },
   
   // Customers
-  getCustomers: async (): Promise<Customer[]> => {
+  getCustomers: async (restaurantId: string): Promise<Customer[]> => {
     await simulateDelay(300);
-    return [...customers].filter(c => !c.is_deleted);
+    return customers.filter(c => !c.is_deleted && c.restaurant_id === restaurantId);
   },
 
-  findCustomerByContact: async (contact: string): Promise<Customer | undefined> => {
+  findCustomerByContact: async (restaurantId: string, contact: string): Promise<Customer | undefined> => {
     await simulateDelay(200);
-    return customers.find(c => (c.telefono === contact || c.email === contact) && !c.is_deleted);
+    return customers.find(c => c.restaurant_id === restaurantId && (c.telefono === contact || c.email === contact) && !c.is_deleted);
   },
 
-  createCustomer: async (customerData: Omit<Customer, 'id' | 'restaurant_id' | 'ltv' | 'ultima_compra' | 'frecuencia_promedio_dias' | 'is_verified'>): Promise<Customer> => {
+  createCustomer: async (customerData: Omit<Customer, 'id' | 'ltv' | 'ultima_compra' | 'frecuencia_promedio_dias' | 'is_verified'>): Promise<Customer> => {
     await simulateDelay(200);
     const newId = `customer-${Date.now()}`;
     const newCustomer: Customer = {
       ...customerData,
       id: newId,
-      restaurant_id: demoRestaurantId,
       ltv: 0,
       ultima_compra: new Date().toISOString(),
       frecuencia_promedio_dias: 0,
@@ -485,9 +516,9 @@ export const api = {
   },
 
   // Coupons
-  getCoupons: async (): Promise<Coupon[]> => {
+  getCoupons: async (restaurantId: string): Promise<Coupon[]> => {
     await simulateDelay(300);
-    return [...coupons];
+    return coupons.filter(c => c.restaurant_id === restaurantId);
   },
 
   createCoupon: async (couponData: Omit<Coupon, 'id'>): Promise<Coupon> => {
@@ -519,18 +550,17 @@ export const api = {
   },
 
   // Ingredients
-  getIngredients: async (): Promise<Ingredient[]> => {
+  getIngredients: async (restaurantId: string): Promise<Ingredient[]> => {
     await simulateDelay(100);
-    return [...ingredients];
+    return ingredients.filter(i => i.restaurant_id === restaurantId);
   },
 
-  createIngredient: async (ingredientData: Omit<Ingredient, 'id' | 'restaurant_id'>): Promise<Ingredient> => {
+  createIngredient: async (ingredientData: Omit<Ingredient, 'id'>): Promise<Ingredient> => {
     await simulateDelay(200);
     const newId = `ing-${Date.now()}`;
     const newIngredient: Ingredient = {
       ...ingredientData,
       id: newId,
-      restaurant_id: demoRestaurantId,
     };
     ingredients = [newIngredient, ...ingredients];
     saveDataToLocalStorage();
@@ -551,7 +581,7 @@ export const api = {
   deleteIngredient: async (ingredientId: string): Promise<void> => {
     await simulateDelay(200);
     ingredients = ingredients.filter(i => i.id !== ingredientId);
-    // Also remove from any menu item recipes
+    // Also remove from any menu item recipes (global filtering is safe here as IDs are unique)
     menuItems = menuItems.map(item => ({
       ...item,
       receta: item.receta.filter(r => r.ingredient_id !== ingredientId),
@@ -561,27 +591,31 @@ export const api = {
 
 
   // Settings
-  getRestaurantSettings: async (): Promise<RestaurantSettings> => {
+  getRestaurantSettings: async (restaurantId: string): Promise<RestaurantSettings | null> => {
     await simulateDelay(100);
-    return { ...restaurantSettings };
+    const restaurant = restaurants.find(r => r.id === restaurantId);
+    return restaurant ? restaurant.settings : null;
   },
 
-  updateRestaurantSettings: async (settings: RestaurantSettings): Promise<RestaurantSettings> => {
+  updateRestaurantSettings: async (restaurantId: string, settings: RestaurantSettings): Promise<RestaurantSettings> => {
     await simulateDelay(200);
-    restaurantSettings = { ...settings };
+    const index = restaurants.findIndex(r => r.id === restaurantId);
+    if (index === -1) throw new Error("Restaurant not found");
+    
+    restaurants[index].settings = settings;
     saveDataToLocalStorage();
-    return { ...restaurantSettings };
+    return { ...restaurants[index].settings };
   },
 
   // Tables
-  getTables: async (): Promise<Table[]> => {
+  getTables: async (restaurantId: string): Promise<Table[]> => {
     await simulateDelay(100);
-    return [...tables];
+    return tables.filter(t => t.restaurant_id === restaurantId);
   },
 
   updateTable: async (updatedTable: Table): Promise<Table> => {
     await simulateDelay(100);
-    const tableIndex = tables.findIndex(t => t.id === updatedTable.id);
+    const tableIndex = tables.findIndex(t => t.id === updatedTable.id && t.restaurant_id === updatedTable.restaurant_id);
     if (tableIndex === -1) {
       throw new Error("Table not found");
     }
@@ -592,8 +626,13 @@ export const api = {
 
   updateTablesLayout: async (updatedTables: Table[]): Promise<Table[]> => {
     await simulateDelay(300);
-    tables = [...updatedTables];
+    // Replace tables for this restaurant only
+    if (updatedTables.length === 0) return [];
+    const restaurantId = updatedTables[0].restaurant_id;
+    const otherTables = tables.filter(t => t.restaurant_id !== restaurantId);
+    
+    tables = [...otherTables, ...updatedTables];
     saveDataToLocalStorage();
-    return [...tables];
+    return updatedTables;
   },
 };

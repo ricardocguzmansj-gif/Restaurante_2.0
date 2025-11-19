@@ -66,7 +66,7 @@ const App: React.FC = () => {
   return (
     <HashRouter>
       <Routes>
-        <Route path="/portal" element={<CustomerPortalPage />} />
+        <Route path="/portal/:restaurantId" element={<CustomerPortalPage />} />
         <Route path="/*" element={<AdminApp />} />
       </Routes>
     </HashRouter>

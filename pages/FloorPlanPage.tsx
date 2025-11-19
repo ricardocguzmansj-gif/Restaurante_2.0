@@ -231,7 +231,7 @@ const TableDetailsModal: React.FC<{
 };
 
 export const FloorPlanPage: React.FC = () => {
-    const { tables, user, saveTableLayout, showToast } = useAppContext();
+    const { tables, user, saveTableLayout, showToast, currentRestaurantId } = useAppContext();
     const [isEditing, setIsEditing] = useState(false);
     const [localTables, setLocalTables] = useState<Table[]>([]);
     const [selectedTable, setSelectedTable] = useState<Table | null>(null);
@@ -294,9 +294,11 @@ export const FloorPlanPage: React.FC = () => {
     };
 
     const handleAddTable = () => {
+        if (!currentRestaurantId) return;
         const newId = Math.max(0, ...localTables.map(t => t.id)) + 1;
         const newTable: Table = {
             id: newId,
+            restaurant_id: currentRestaurantId,
             nombre: `Mesa ${newId}`,
             estado: TableStatus.LIBRE,
             order_id: null,

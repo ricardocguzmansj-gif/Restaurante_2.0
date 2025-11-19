@@ -1,8 +1,10 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { MenuCategory, MenuItem, OrderItem, OrderType, Customer } from '../types';
 import { formatCurrency } from '../utils';
-import { Pizza, ShoppingCart, Minus, Plus, X, Pencil, Send, CheckCircle, Truck, ShoppingBag } from 'lucide-react';
+import { Pizza, ShoppingCart, Minus, Plus, X, Pencil, Send, CheckCircle, Truck, ShoppingBag, MapPin, Loader2 } from 'lucide-react';
 import { Toast } from '../components/ui/Toast';
 
 // --- SUBCOMPONENTS ---
@@ -117,8 +119,10 @@ const VerificationModal: React.FC<{
 // --- MAIN PAGE COMPONENT ---
 
 export const CustomerPortalPage: React.FC = () => {
-    const { processedMenuItems, categories, restaurantSettings, createPublicOrder, createCustomer, findCustomerByContact, verifyCustomer } = useAppContext();
-    const [activeCategory, setActiveCategory] = useState(categories[0]?.id || 'all');
+    const { restaurantId } = useParams<{ restaurantId: string }>();
+    const { processedMenuItems, categories, restaurantSettings, createPublicOrder, createCustomer, findCustomerByContact, verifyCustomer, switchRestaurant } = useAppContext();
+    
+    const [activeCategory, setActiveCategory] = useState('all');
     const [cart, setCart] = useState<OrderItem[]>([]);
     const [pageState, setPageState] = useState<'menu' | 'checkout' | 'confirm'>('menu');
     const [orderType, setOrderType] = useState<OrderType>(OrderType.PARA_LLEVAR);
@@ -128,10 +132,19 @@ export const CustomerPortalPage: React.FC = () => {
     const [finalizedOrder, setFinalizedOrder] = useState<any>(null);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [isLocating, setIsLocating] = useState(false);
 
     useEffect(() => {
-        if (!categories.find(c => c.id === activeCategory) && categories.length > 0) {
-            setActiveCategory(categories[0]?.id || 'all');
+        if (restaurantId) {
+            switchRestaurant(restaurantId);
+        }
+    }, [restaurantId, switchRestaurant]);
+
+    useEffect(() => {
+        if (categories.length > 0 && !categories.find(c => c.id === activeCategory)) {
+             setActiveCategory(categories[0].id);
+        } else if (categories.length === 0) {
+            setActiveCategory('all');
         }
     }, [categories, activeCategory]);
 
@@ -181,7 +194,7 @@ export const CustomerPortalPage: React.FC = () => {
             propina: 0,
             total,
             items: cart,
-            restaurant_id: 'rest-pizarra-01',
+            restaurant_id: restaurantId || 'rest-pizarra-01',
         };
         const newOrder = await createPublicOrder(orderData);
         if(newOrder) {
@@ -191,6 +204,34 @@ export const CustomerPortalPage: React.FC = () => {
         }
     };
     
+    const handleUseCurrentLocation = () => {
+        if (!navigator.geolocation) {
+            showToast("La geolocalización no es soportada por tu navegador.", "error");
+            return;
+        }
+        setIsLocating(true);
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                setCustomerDetails(prev => ({
+                    ...prev,
+                    direccion: {
+                        ...prev.direccion,
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    }
+                }));
+                showToast("Ubicación obtenida con éxito.", "success");
+                setIsLocating(false);
+            },
+            (error) => {
+                console.error("Error obtaining location", error);
+                showToast("No se pudo obtener tu ubicación. Por favor ingrésala manualmente.", "error");
+                setIsLocating(false);
+            },
+            { enableHighAccuracy: true }
+        );
+    };
+
     const handlePlaceOrder = async () => {
         if (!customerDetails.nombre.trim() || !customerDetails.telefono.trim()) {
             return showToast('Por favor, completa tu nombre y teléfono.', 'error');
@@ -210,10 +251,24 @@ export const CustomerPortalPage: React.FC = () => {
         }
 
         setIsProcessing(true);
+        
+        // Simulate geocoding: Assign coordinates if none present and no geolocation used
+        let finalAddress = { ...customerDetails.direccion };
+        if (orderType === OrderType.DELIVERY && finalAddress.lat === 0 && finalAddress.lng === 0) {
+             // Generate random coordinates near Buenos Aires Obelisco for demo fallback
+             finalAddress.lat = -34.6037 + (Math.random() - 0.5) * 0.02;
+             finalAddress.lng = -58.3816 + (Math.random() - 0.5) * 0.02;
+        }
+
         try {
             const existingCustomer = await findCustomerByContact(customerDetails.telefono);
 
             if (existingCustomer) {
+                // Update existing customer with new address info if provided
+                if (orderType === OrderType.DELIVERY) {
+                     existingCustomer.direccion = finalAddress;
+                }
+                
                 if (existingCustomer.is_verified) {
                     await placeOrder(existingCustomer);
                 } else {
@@ -226,7 +281,7 @@ export const CustomerPortalPage: React.FC = () => {
                     nombre: customerDetails.nombre,
                     telefono: customerDetails.telefono,
                     email: customerDetails.email || `${customerDetails.telefono}@system.com`,
-                    direccion: customerDetails.direccion,
+                    direccion: finalAddress,
                 });
                 if (newCustomer) {
                     setPendingOrder({ customer: newCustomer });
@@ -316,11 +371,31 @@ export const CustomerPortalPage: React.FC = () => {
               </div>
                {orderType === OrderType.DELIVERY && (
                  <div className="mt-4 space-y-4">
-                    <input name="direccion.calle" value={customerDetails.direccion.calle} onChange={handleCustomerDetailsChange} placeholder="Dirección (Calle y Número)" className="w-full p-3 border rounded-md" />
+                    <div className="relative">
+                        <MapPin className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                        <input name="direccion.calle" value={customerDetails.direccion.calle} onChange={handleCustomerDetailsChange} placeholder="Dirección (Calle y Número)" className="w-full pl-10 p-3 border rounded-md" />
+                    </div>
                     <div className="grid grid-cols-2 gap-4">
                       <input name="direccion.ciudad" value={customerDetails.direccion.ciudad} onChange={handleCustomerDetailsChange} placeholder="Ciudad" className="p-3 border rounded-md" />
                       <input name="direccion.codigo_postal" value={customerDetails.direccion.codigo_postal} onChange={handleCustomerDetailsChange} placeholder="Código Postal" className="p-3 border rounded-md" />
                     </div>
+                     <button
+                        type="button"
+                        onClick={handleUseCurrentLocation}
+                        disabled={isLocating}
+                        className="flex items-center justify-center gap-2 text-sm text-blue-600 hover:text-blue-800 font-medium mt-2 w-full p-2 border border-blue-200 rounded-md hover:bg-blue-50"
+                    >
+                        {isLocating ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
+                        {isLocating ? 'Obteniendo ubicación...' : '📍 Usar mi ubicación actual'}
+                    </button>
+                    {customerDetails.direccion.lat !== 0 && (
+                         <p className="text-xs text-green-600 font-semibold">
+                            ✓ Ubicación GPS capturada correctamente.
+                         </p>
+                    )}
+                    <p className="text-xs text-gray-500 italic">
+                        * Al confirmar, usaremos tu ubicación para facilitar la entrega.
+                    </p>
                  </div>
                )}
             </div>

@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback, useMemo, useRef } from 'react';
-import { User, Order, OrderStatus, MenuCategory, MenuItem, Customer, Coupon, Toast, OrderType, UserRole, PaymentDetails, Table, RestaurantSettings, TableStatus, Ingredient, RecipeItem } from '../types';
+import { User, Order, OrderStatus, MenuCategory, MenuItem, Customer, Coupon, Toast, OrderType, UserRole, PaymentDetails, Table, RestaurantSettings, TableStatus, Ingredient, RecipeItem, Restaurant } from '../types';
 import { api } from '../services/api';
 import { formatCurrency } from '../utils';
 
@@ -9,6 +9,8 @@ interface AppContextType {
   users: User[];
   login: (email: string, password_provided: string) => Promise<void>;
   logout: () => void;
+  currentRestaurantId: string | null;
+  switchRestaurant: (restaurantId: string) => Promise<void>; // For portal use
   orders: Order[];
   tables: Table[];
   menuItems: MenuItem[];
@@ -55,12 +57,15 @@ interface AppContextType {
   createIngredient: (data: Omit<Ingredient, 'id' | 'restaurant_id'>) => Promise<void>;
   updateIngredient: (data: Ingredient) => Promise<void>;
   deleteIngredient: (id: string) => Promise<void>;
+  updateUserLocation: (userId: string, lat: number, lng: number) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [currentRestaurantId, setCurrentRestaurantId] = useState<string | null>(null);
+  
   const [users, setUsers] = useState<User[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -81,19 +86,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setTimeout(() => setToast(prev => (prev?.id === newToast.id ? null : prev)), 3000);
   }, []);
 
-  const loadInitialData = useCallback(async () => {
+  const loadInitialData = useCallback(async (restaurantId: string) => {
     try {
       setIsLoading(true);
       const [ordersData, menuItemsData, customersData, couponsData, usersData, categoriesData, settingsData, tablesData, ingredientsData] = await Promise.all([
-        api.getOrders(),
-        api.getMenuItems(),
-        api.getCustomers(),
-        api.getCoupons(),
-        api.getUsers(),
-        api.getCategories(),
-        api.getRestaurantSettings(),
-        api.getTables(),
-        api.getIngredients(),
+        api.getOrders(restaurantId),
+        api.getMenuItems(restaurantId),
+        api.getCustomers(restaurantId),
+        api.getCoupons(restaurantId),
+        api.getUsers(restaurantId),
+        api.getCategories(restaurantId),
+        api.getRestaurantSettings(restaurantId),
+        api.getTables(restaurantId),
+        api.getIngredients(restaurantId),
       ]);
       setOrders(ordersData);
       setMenuItems(menuItemsData);
@@ -106,15 +111,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIngredients(ingredientsData);
     } catch (error) {
       console.error("Failed to load initial data", error);
-      showToast("Error al cargar los datos", "error");
+      showToast("Error al cargar los datos del restaurante", "error");
     } finally {
       setIsLoading(false);
     }
   }, [showToast]);
 
+  // Load data when restaurant ID changes (either by login or explicit switch via portal)
   useEffect(() => {
-    loadInitialData();
-  }, [loadInitialData]);
+    if (currentRestaurantId) {
+        loadInitialData(currentRestaurantId);
+    } else {
+        // Reset data if no restaurant is selected
+        setOrders([]);
+        setMenuItems([]);
+        setCustomers([]);
+        setCoupons([]);
+        setUsers([]);
+        setCategories([]);
+        setRestaurantSettings(null);
+        setTables([]);
+        setIngredients([]);
+    }
+  }, [currentRestaurantId, loadInitialData]);
+
+  const switchRestaurant = async (restaurantId: string) => {
+      setCurrentRestaurantId(restaurantId);
+  };
 
   // Syncs the previous orders ref with the current state for comparison.
   useEffect(() => {
@@ -124,23 +147,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Real-time notification polling effect
   useEffect(() => {
-    if (!user) return; // No polling if not logged in
+    if (!user || !currentRestaurantId) return; // No polling if not logged in or no restaurant context
 
-    let notificationSound: HTMLAudioElement | null = null;
-    try {
-        notificationSound = new Audio('https://cdn.pixabay.com/audio/2022/03/15/audio_2c244a341b.mp3');
-    } catch (e) {
-        console.error("Could not create audio element", e);
-    }
+    // Create sound object once
+    const notificationSound = new Audio('https://cdn.pixabay.com/audio/2022/03/15/audio_2c244a341b.mp3');
+    notificationSound.volume = 0.5;
+
+    const playSound = () => {
+        notificationSound.play().catch(e => console.warn("Sound play blocked (interaction needed):", e));
+    };
 
     const intervalId = setInterval(async () => {
         const currentOrders = prevOrdersRef.current;
         if (!currentOrders) return;
         
-        const newOrders = await api.getOrders();
+        const newOrders = await api.getOrders(currentRestaurantId);
+        const newUsers = await api.getUsers(currentRestaurantId); // Poll users to get updated locations
 
+        // Update users silently if changed (e.g. location updates)
+        if (JSON.stringify(users) !== JSON.stringify(newUsers)) {
+            setUsers(newUsers);
+        }
+
+        // Deep comparison relies on api.getOrders returning deep copies
         if (JSON.stringify(currentOrders) === JSON.stringify(newOrders)) {
-            return; // No changes, do nothing
+            return; // No changes in orders
         }
 
         // --- Kitchen Notification ---
@@ -150,9 +181,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
             if (newlyArrivedOrders.length > 0) {
                 showToast(`¡Nuevo pedido #${newlyArrivedOrders[0].id} en cocina!`, 'success');
-                if (notificationSound) {
-                    notificationSound.play().catch(e => console.error("Sound play failed", e));
-                }
+                playSound();
             }
         }
 
@@ -171,17 +200,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                      // Only notify if it's an active assignment (Ready or On the way)
                      if ([OrderStatus.LISTO, OrderStatus.EN_CAMINO].includes(newOrder.estado)) {
                         showToast(`📦 ¡Nuevo pedido asignado! #${newOrder.id}`, 'success');
-                        if (notificationSound) {
-                            notificationSound.play().catch(e => console.error("Sound play failed", e));
-                        }
+                        playSound();
                      }
                 }
                 // Status change on an existing delivery
                 else if (oldOrder.estado !== newOrder.estado) {
                     showToast(`Pedido #${newOrder.id} actualizado: ${newOrder.estado}`, 'success');
-                    if (notificationSound) {
-                        notificationSound.play().catch(e => console.error("Sound play failed", e));
-                    }
+                    playSound();
                 }
             });
         }
@@ -192,12 +217,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, 5000); // Poll every 5 seconds
 
     return () => clearInterval(intervalId);
-  }, [user, showToast]);
+  }, [user, currentRestaurantId, showToast, users]); // Add users to dependency if used in logic, though we just set it.
 
   const login = async (email: string, password_provided: string) => {
     const selectedUser = await api.login(email, password_provided);
     if (selectedUser) {
       setUser(selectedUser);
+      setCurrentRestaurantId(selectedUser.restaurant_id);
     } else {
       showToast("Email o contraseña incorrectos", "error");
     }
@@ -205,6 +231,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const logout = () => {
     setUser(null);
+    setCurrentRestaurantId(null);
   };
 
   const allItemsForDisplay = useMemo(() => {
@@ -257,6 +284,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
 
   const updateOrderStatus = async (orderId: number, newStatus: OrderStatus) => {
+    if (!currentRestaurantId) return;
     try {
       const originalOrder = orders.find(o => o.id === orderId);
       const updatedOrder = await api.updateOrderStatus(orderId, newStatus);
@@ -266,12 +294,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       if (originalOrder?.estado !== OrderStatus.EN_PREPARACION && newStatus === OrderStatus.EN_PREPARACION) {
           await api.deductStockForOrder(orderId);
-          const updatedIngredients = await api.getIngredients();
+          const updatedIngredients = await api.getIngredients(currentRestaurantId);
           setIngredients(updatedIngredients);
       }
 
       if (updatedOrder.tipo === OrderType.DELIVERY) {
-        const usersData = await api.getUsers();
+        const usersData = await api.getUsers(currentRestaurantId);
         setUsers(usersData);
       }
       showToast(`Pedido #${orderId} actualizado a ${newStatus}`);
@@ -282,6 +310,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
   
   const cancelOrder = async (orderId: number) => {
+    if (!currentRestaurantId) return;
     try {
         const updatedOrder = await api.cancelOrder(orderId);
         setOrders(prevOrders => prevOrders.map(order =>
@@ -290,9 +319,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         
         // reload related data that might have changed
         const [updatedIngredients, updatedUsers, updatedTables] = await Promise.all([
-            api.getIngredients(),
-            api.getUsers(),
-            api.getTables()
+            api.getIngredients(currentRestaurantId),
+            api.getUsers(currentRestaurantId),
+            api.getTables(currentRestaurantId)
         ]);
         setIngredients(updatedIngredients);
         setUsers(updatedUsers);
@@ -305,15 +334,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createOrder = async (orderData: Omit<Order, 'id' | 'creado_en' | 'estado' | 'repartidor_id' | 'payments' | 'creado_por_id' | 'mozo_id'>): Promise<Order | null> => {
-    if (!user) {
-        showToast("Error de autenticación. No se pudo crear el pedido.", "error");
+    if (!user || !currentRestaurantId) {
+        showToast("Error de autenticación o contexto. No se pudo crear el pedido.", "error");
         return null;
     }
     try {
       const isSalaOrder = orderData.tipo === OrderType.SALA;
       const mozo_id = (isSalaOrder && user?.rol === UserRole.MOZO) ? user.id : null;
       
-      const newOrder = await api.createOrder({ ...orderData, creado_por_id: user.id, mozo_id });
+      const newOrder = await api.createOrder({ ...orderData, creado_por_id: user.id, mozo_id, restaurant_id: currentRestaurantId });
       setOrders(prevOrders => [newOrder, ...prevOrders]);
 
       if (newOrder.tipo === OrderType.SALA && newOrder.table_id) {
@@ -329,7 +358,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       if (newOrder.tipo === OrderType.DELIVERY) {
-        const usersData = await api.getUsers();
+        const usersData = await api.getUsers(currentRestaurantId);
         setUsers(usersData);
       }
       showToast(`Pedido #${newOrder.id} creado.`);
@@ -342,8 +371,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createPublicOrder = async (orderData: Omit<Order, 'id' | 'creado_en' | 'estado' | 'repartidor_id' | 'payments' | 'creado_por_id' | 'mozo_id'>): Promise<Order | null> => {
+    if (!currentRestaurantId) return null;
     try {
-      const newOrder = await api.createPublicOrder(orderData);
+      const newOrder = await api.createPublicOrder({ ...orderData, restaurant_id: currentRestaurantId });
       setOrders(prevOrders => [newOrder, ...prevOrders]);
       showToast(`Pedido #${newOrder.id} recibido. ¡Gracias!`);
       return newOrder;
@@ -355,8 +385,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createCustomer = async (customerData: Omit<Customer, 'id' | 'restaurant_id' | 'ltv' | 'ultima_compra' | 'frecuencia_promedio_dias' | 'is_verified'>): Promise<Customer | null> => {
+    if (!currentRestaurantId) return null;
     try {
-      const newCustomer = await api.createCustomer(customerData);
+      const newCustomer = await api.createCustomer({ ...customerData, restaurant_id: currentRestaurantId });
       setCustomers(prev => [newCustomer, ...prev].sort((a,b) => a.nombre.localeCompare(b.nombre)));
       showToast(`Cliente '${newCustomer.nombre}' creado con éxito.`);
       return newCustomer;
@@ -368,8 +399,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const findCustomerByContact = async (contact: string): Promise<Customer | undefined> => {
+    if (!currentRestaurantId) return undefined;
     try {
-        return await api.findCustomerByContact(contact);
+        return await api.findCustomerByContact(currentRestaurantId, contact);
     } catch (error) {
         console.error(error);
         showToast("Error al buscar cliente", "error");
@@ -401,10 +433,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
   
   const deleteCustomer = async (customerId: string) => {
+    if (!currentRestaurantId) return;
     try {
       await api.deleteCustomer(customerId);
-      const updatedCustomers = await api.getCustomers(); // Vuelve a cargar los clientes para asegurar consistencia
-      setCustomers(updatedCustomers); // Actualiza el estado con la lista fresca
+      const updatedCustomers = await api.getCustomers(currentRestaurantId); 
+      setCustomers(updatedCustomers); 
       showToast(`Cliente desactivado con éxito.`);
     } catch (error: any) {
       console.error(error);
@@ -434,12 +467,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const assignRepartidor = async (orderId: number, repartidorId: string) => {
+    if (!currentRestaurantId) return;
     try {
       const updatedOrder = await api.assignRepartidorToOrder(orderId, repartidorId);
       setOrders(prevOrders => prevOrders.map(order => 
         order.id === orderId ? updatedOrder : order
       ));
-      const usersData = await api.getUsers();
+      const usersData = await api.getUsers(currentRestaurantId);
       setUsers(usersData);
       showToast(`Pedido #${orderId} asignado con éxito.`);
     } catch (error) {
@@ -460,8 +494,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createCoupon = async (couponData: Omit<Coupon, 'id' | 'restaurant_id'>) => {
+    if (!currentRestaurantId) return;
     try {
-      const newCoupon = await api.createCoupon({ ...couponData, restaurant_id: 'rest-pizarra-01' });
+      const newCoupon = await api.createCoupon({ ...couponData, restaurant_id: currentRestaurantId });
       setCoupons(prev => [newCoupon, ...prev].sort((a, b) => (a.activo === b.activo) ? 0 : a.activo ? -1 : 1));
       showToast(`Cupón '${newCoupon.codigo}' creado con éxito.`);
     } catch (error) {
@@ -539,8 +574,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
   
   const createUser = async (userData: Omit<User, 'id' | 'restaurant_id' | 'avatar_url'>) => {
+    if (!currentRestaurantId) return;
     try {
-      const newUser = await api.createUser(userData);
+      const newUser = await api.createUser({ ...userData, restaurant_id: currentRestaurantId });
       setUsers(prev => [newUser, ...prev].sort((a, b) => a.nombre.localeCompare(b.nombre)));
       showToast(`Usuario '${newUser.nombre}' creado con éxito.`);
     } catch (error) {
@@ -560,6 +596,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const updateUserLocation = async (userId: string, lat: number, lng: number) => {
+     try {
+         await api.updateUserLocation(userId, lat, lng);
+         // We optimistically update the local state for instant feedback, 
+         // though the polling interval will sync it eventually.
+         setUsers(prev => prev.map(u => u.id === userId ? { ...u, last_location: { lat, lng, updated_at: new Date().toISOString() } } : u));
+     } catch (error) {
+         console.error("Failed to update user location", error);
+     }
+  };
+
   const deleteUser = async (userId: string) => {
     try {
       await api.deleteUser(userId);
@@ -572,8 +619,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createMenuItem = async (itemData: Omit<MenuItem, 'id' | 'restaurant_id' | 'coste' | 'stock_actual'>) => {
+    if (!currentRestaurantId) return;
     try {
-      const newItem = await api.createMenuItem(itemData as Omit<MenuItem, 'id' | 'restaurant_id'>);
+      const newItem = await api.createMenuItem({ 
+        ...itemData, 
+        restaurant_id: currentRestaurantId,
+        coste: 0,
+        stock_actual: null
+      });
       setMenuItems(prev => [newItem, ...prev].sort((a,b) => a.nombre.localeCompare(b.nombre)));
       showToast(`Producto '${newItem.nombre}' creado con éxito.`);
     } catch (error) {
@@ -616,8 +669,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createCategory = async (name: string) => {
+    if (!currentRestaurantId) return;
     try {
-        const newCategory = await api.createCategory(name);
+        const newCategory = await api.createCategory({ nombre: name, restaurant_id: currentRestaurantId, orden: 0 });
         setCategories(prev => [...prev, newCategory].sort((a, b) => a.orden - b.orden));
         showToast(`Categoría '${name}' creada con éxito.`);
     } catch (error) {
@@ -649,8 +703,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
   
   const updateRestaurantSettings = async (settings: RestaurantSettings) => {
+    if (!currentRestaurantId) return;
     try {
-      const updatedSettings = await api.updateRestaurantSettings(settings);
+      const updatedSettings = await api.updateRestaurantSettings(currentRestaurantId, settings);
       setRestaurantSettings(updatedSettings);
       showToast("Configuración del restaurante guardada con éxito.");
     } catch (error) {
@@ -684,27 +739,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast("Diseño del salón guardado con éxito.");
     } catch (error) {
         console.error("Error saving table layout", error);
-        showToast("Error al guardar el diseño del salón.", "error");
+        showToast("Error al guardar el diseño del salón", "error");
     }
   };
 
   const createIngredient = async (data: Omit<Ingredient, 'id' | 'restaurant_id'>) => {
+    if (!currentRestaurantId) return;
     try {
-        const newIngredient = await api.createIngredient(data);
-        setIngredients(prev => [newIngredient, ...prev].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+        const newIngredient = await api.createIngredient({ ...data, restaurant_id: currentRestaurantId });
+        setIngredients(prev => [...prev, newIngredient]);
         showToast(`Ingrediente '${newIngredient.nombre}' creado.`);
     } catch (error) {
-        showToast("Error al crear ingrediente.", "error");
+        console.error(error);
+        showToast("Error al crear ingrediente", "error");
     }
   };
-  
+
   const updateIngredient = async (data: Ingredient) => {
     try {
         const updated = await api.updateIngredient(data);
         setIngredients(prev => prev.map(i => i.id === updated.id ? updated : i));
         showToast(`Ingrediente '${updated.nombre}' actualizado.`);
     } catch (error) {
-        showToast("Error al actualizar ingrediente.", "error");
+        console.error(error);
+        showToast("Error al actualizar ingrediente", "error");
     }
   };
 
@@ -712,36 +770,84 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
         await api.deleteIngredient(id);
         setIngredients(prev => prev.filter(i => i.id !== id));
-        // Menu items relying on this ingredient will also be updated in the backend
-        const updatedMenuItems = await api.getMenuItems();
-        setMenuItems(updatedMenuItems);
+        // Also refresh menu items as recipes might change
+        if(currentRestaurantId) {
+            const items = await api.getMenuItems(currentRestaurantId);
+            setMenuItems(items);
+        }
         showToast("Ingrediente eliminado.");
     } catch (error) {
-        showToast("Error al eliminar ingrediente.", "error");
+        console.error(error);
+        showToast("Error al eliminar ingrediente", "error");
     }
   };
 
+  const value = {
+    user,
+    users,
+    login,
+    logout,
+    currentRestaurantId,
+    switchRestaurant,
+    orders,
+    tables,
+    menuItems,
+    processedMenuItems,
+    allItemsForDisplay,
+    categories,
+    customers,
+    coupons,
+    ingredients,
+    restaurantSettings,
+    toast,
+    updateOrderStatus,
+    cancelOrder,
+    createOrder,
+    createPublicOrder,
+    createCustomer,
+    updateCustomer,
+    deleteCustomer,
+    findCustomerByContact,
+    verifyCustomer,
+    updateOrder,
+    assignRepartidor,
+    assignMozoToOrder,
+    showToast,
+    createCoupon,
+    updateCoupon,
+    deleteCoupon,
+    generatePaymentQR,
+    addPaymentToOrder,
+    createUser,
+    updateUser,
+    deleteUser,
+    createMenuItem,
+    updateMenuItem,
+    deleteMenuItem,
+    restoreMenuItem,
+    updateCategories,
+    createCategory,
+    deleteCategory,
+    updateRestaurantSettings,
+    cleanTable,
+    saveTableLayout,
+    updateTable,
+    createIngredient,
+    updateIngredient,
+    deleteIngredient,
+    updateUserLocation,
+  };
 
   return (
-    <AppContext.Provider value={{
-      user, users, login, logout, orders, tables, menuItems, processedMenuItems, allItemsForDisplay, categories, customers, coupons, ingredients, restaurantSettings,
-      toast, updateOrderStatus, cancelOrder, createOrder, createPublicOrder, showToast, createCustomer, updateCustomer, deleteCustomer,
-      findCustomerByContact, verifyCustomer,
-      updateOrder, assignRepartidor, assignMozoToOrder, createCoupon, updateCoupon, deleteCoupon,
-      generatePaymentQR, addPaymentToOrder, createUser, updateUser, deleteUser,
-      createMenuItem, updateMenuItem, deleteMenuItem, restoreMenuItem, updateCategories, createCategory, deleteCategory,
-      updateRestaurantSettings,
-      cleanTable, saveTableLayout, updateTable,
-      createIngredient, updateIngredient, deleteIngredient
-    }}>
+    <AppContext.Provider value={value}>
       {children}
     </AppContext.Provider>
   );
 };
 
-export const useAppContext = (): AppContextType => {
+export const useAppContext = () => {
   const context = useContext(AppContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAppContext must be used within an AppProvider');
   }
   return context;
