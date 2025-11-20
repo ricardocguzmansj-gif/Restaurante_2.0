@@ -135,6 +135,7 @@ const MenuItemModal: React.FC<{
         }, 0);
     }, [formData.receta, ingredients]);
 
+    const margin = formData.precio_base > 0 ? ((formData.precio_base - calculatedCost) / formData.precio_base) * 100 : 0;
 
     const handleTagsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({
@@ -235,13 +236,19 @@ const MenuItemModal: React.FC<{
                              <div>
                                 <label htmlFor="precio_base" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Precio</label>
                                 <input type="number" name="precio_base" value={formData.precio_base} onChange={handleChange} required min="0" step="0.01" className={inputClasses} />
+                                <div className="flex justify-between text-xs mt-1 px-1">
+                                    <span className="text-gray-500 dark:text-gray-400">Costo: {formatCurrency(calculatedCost)}</span>
+                                    <span className={`font-medium ${margin < 0 ? 'text-red-500' : margin < 50 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
+                                        Margen: {margin.toFixed(1)}%
+                                    </span>
+                                </div>
                             </div>
                         </div>
                         
                         <div className="pt-4 border-t dark:border-gray-700">
                              <div className="flex justify-between items-center mb-2">
                                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Receta / Ingredientes</label>
-                                <span className="text-sm font-bold">Costo Calculado: {formatCurrency(calculatedCost)}</span>
+                                <span className="text-sm font-bold">Costo Total: {formatCurrency(calculatedCost)}</span>
                             </div>
                             <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
                                 {formData.receta.map((recipeItem, index) => (

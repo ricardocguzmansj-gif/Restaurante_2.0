@@ -1,9 +1,9 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
-import { DollarSign, ShoppingCart, Users, AlertCircle } from 'lucide-react';
+import { DollarSign, ShoppingCart, Users, AlertCircle, Package } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { formatCurrency } from '../utils';
 import { OrderStatus } from '../types';
@@ -58,6 +58,17 @@ export const DashboardPage: React.FC = () => {
     const pendingOrders = orders.filter(o => o.estado === OrderStatus.NUEVO).length;
     const lowStockIngredients = ingredients.filter(i => i.stock_actual <= i.stock_minimo);
 
+    const inventoryValueByCategory = useMemo(() => {
+        const data: Record<string, number> = {};
+        ingredients.forEach(ing => {
+            const value = ing.stock_actual * ing.coste_unitario;
+            data[ing.categoria] = (data[ing.categoria] || 0) + value;
+        });
+        return Object.entries(data).map(([name, value]) => ({ name, valor: value }));
+    }, [ingredients]);
+
+    const totalInventoryValue = inventoryValueByCategory.reduce((acc, curr) => acc + curr.valor, 0);
+
     return (
         <div className="space-y-6">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
@@ -80,21 +91,22 @@ export const DashboardPage: React.FC = () => {
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <KpiCard title="Ingresos de Hoy" value={formatCurrency(todaysRevenue)} icon={<DollarSign className="h-6 w-6 text-white"/>} color="bg-green-500" />
                 <KpiCard title="Pedidos de Hoy" value={todaysOrders.length.toString()} icon={<ShoppingCart className="h-6 w-6 text-white"/>} color="bg-blue-500" />
                 <KpiCard title="Ticket Promedio" value={formatCurrency(avgTicket)} icon={<Users className="h-6 w-6 text-white"/>} color="bg-orange-500" />
+                <KpiCard title="Valor Inventario" value={formatCurrency(totalInventoryValue)} icon={<Package className="h-6 w-6 text-white"/>} color="bg-purple-500" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card className="lg:col-span-3">
+                <Card className="lg:col-span-2">
                     <h2 className="text-xl font-semibold mb-4">Ingresos en los últimos 30 días</h2>
                     <div style={{ width: '100%', height: 300 }}>
                         <ResponsiveContainer>
                             <LineChart data={last30DaysRevenueData}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(128, 128, 128, 0.2)" />
                                 <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 12 }} />
-                                <YAxis tickFormatter={(value) => new Intl.NumberFormat('es-AR').format(value as number)} tick={{ fill: '#9ca3af', fontSize: 12 }} />
+                                <YAxis tickFormatter={(value) => new Intl.NumberFormat('es-AR', { notation: "compact", compactDisplay: "short" }).format(value)} tick={{ fill: '#9ca3af', fontSize: 12 }} />
                                 <Tooltip
                                     contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }}
                                     labelStyle={{ color: '#d1d5db' }}
@@ -105,6 +117,25 @@ export const DashboardPage: React.FC = () => {
                             </LineChart>
                         </ResponsiveContainer>
                     </div>
+                </Card>
+                
+                <Card className="lg:col-span-1">
+                     <h2 className="text-xl font-semibold mb-4">Valor de Inventario por Categoría</h2>
+                     <div style={{ width: '100%', height: 300 }}>
+                        <ResponsiveContainer>
+                             <BarChart data={inventoryValueByCategory} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(128, 128, 128, 0.2)" />
+                                <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 11 }} interval={0} />
+                                <YAxis tickFormatter={(value) => new Intl.NumberFormat('es-AR', { notation: "compact" }).format(value)} tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                                <Tooltip 
+                                    contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} 
+                                    formatter={(value: number) => [formatCurrency(value), 'Valor']}
+                                    labelStyle={{ color: '#d1d5db' }}
+                                />
+                                <Bar dataKey="valor" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Valor ($)" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                     </div>
                 </Card>
 
                 <Card className="lg:col-span-2">
