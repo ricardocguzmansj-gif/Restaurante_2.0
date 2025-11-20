@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card } from '../components/ui/Card';
 import { useAppContext } from '../contexts/AppContext';
 import { Ingredient, UserRole, IngredientCategory } from '../types';
-import { PlusCircle, X, Edit, Trash2 } from 'lucide-react';
+import { PlusCircle, X, Edit, Trash2, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../utils';
 
 const IngredientModal: React.FC<{
@@ -268,10 +269,17 @@ export const InventoryPage: React.FC = () => {
                            {paginatedIngredients.map(ing => {
                                const isLowStock = ing.stock_actual <= ing.stock_minimo;
                                return (
-                                   <tr key={ing.id} className={isLowStock ? 'bg-yellow-50 dark:bg-yellow-900/20' : ''}>
+                                   <tr key={ing.id} className={isLowStock ? 'bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500' : 'border-l-4 border-transparent'}>
                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{ing.nombre}</td>
                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">{ing.categoria}</td>
-                                       <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${isLowStock ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-800 dark:text-gray-200'}`}>{ing.stock_actual}</td>
+                                       <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`font-bold ${isLowStock ? 'text-red-600 dark:text-red-400' : 'text-gray-800 dark:text-gray-200'}`}>
+                                                    {ing.stock_actual}
+                                                </span>
+                                                {isLowStock && <AlertTriangle className="h-4 w-4 text-red-500" title="Stock Bajo" />}
+                                            </div>
+                                       </td>
                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">{ing.stock_minimo}</td>
                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">{ing.unidad}</td>
                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">{formatCurrency(ing.coste_unitario)}</td>
